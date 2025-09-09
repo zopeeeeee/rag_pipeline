@@ -56,7 +56,7 @@ def parse_file(path: str) -> List[Dict]:
         })
     return out
 
-if __name__ == "__main__":
+if __name__ == "_main_":
     import sys
     p = sys.argv[1]
     chunks = parse_file(p)

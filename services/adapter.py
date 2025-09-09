@@ -1,76 +1,78 @@
-# services/adapter.py
-import os, time, json
-import requests
+import os, time, requests
+from dotenv import load_dotenv
 
-# Try import of google-genai safely
-try:
-    from google import genai
-    HAS_GENAI = True
-except Exception:
-    HAS_GENAI = False
+# Load .env
+load_dotenv()
 
+# Optional: only import gemini if API key exists
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# If you prefer direct REST rather than SDK, you can set a GEMINI_API_URL, but
-# using google-genai SDK is simpler (it reads GEMINI_API_KEY).
-GEMINI_API_URL = os.getenv("GEMINI_API_URL", None)
-
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 PHI3_LOCAL_URL = os.getenv("PHI3_LOCAL_URL", "http://localhost:11434")
 
-def call_gemini_with_sdk(prompt, model="gemini-2.5-flash", timeout=20):
-    if not HAS_GENAI:
-        raise RuntimeError("google-genai SDK not installed")
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY not set")
-    client = genai.Client()  # client picks up GEMINI_API_KEY from env
-    resp = client.models.generate_content(model=model, contents=prompt, timeout=timeout)
-    return getattr(resp, "text", str(resp))
+try:
+    if GEMINI_API_KEY:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+        HAS_GEMINI = True
+    else:
+        HAS_GEMINI = False
+except Exception as e:
+    print("Gemini import/config failed:", e)
+    HAS_GEMINI = False
 
-def call_gemini_rest(prompt, model="gemini-2.5-flash", timeout=20):
-    url = GEMINI_API_URL or f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    headers = {"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    r = requests.post(url, headers=headers, json=payload, timeout=timeout)
-    r.raise_for_status()
-    data = r.json()
-    # Extract text safely:
-    return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
 
-def call_ollama(prompt, model="phi3:mini", timeout=20):
-    # Ollama's REST API: POST /api/generate {"model":"phi3:mini", "prompt":"..."}
+def call_gemini(prompt, model=GEMINI_MODEL, timeout=20):
+    if not HAS_GEMINI:
+        raise RuntimeError("Gemini API key not set or SDK missing")
+    try:
+        llm_model = genai.GenerativeModel(model)
+        resp = llm_model.generate_content(prompt, request_options={"timeout": timeout})
+        return resp.text
+    except Exception as e:
+        print("Gemini call failed:", e)
+        raise
+
+
+def call_ollama(prompt, model="phi3", timeout=20):
     url = f"{PHI3_LOCAL_URL}/api/generate"
-    payload = {"model": model, "prompt": prompt}
-    r = requests.post(url, json=payload, timeout=timeout)
-    r.raise_for_status()
-    return r.json().get("response") or r.text
+    payload = {"model": model, "prompt": prompt, "stream": False}
+    try:
+        r = requests.post(url, json=payload, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        return data.get("response") or str(data)
+    except Exception as e:
+        print("Ollama call failed:", e)
+        raise
+
 
 def call_mock(prompt):
-    # Simple deterministic mock — excellent for testing pipeline
+    print("Using MOCK response ✅")
     return "MOCK ANSWER ✅ (pipeline OK — no real LLM configured)."
+
 
 def call_llm_with_fallback(prompt):
     """
-    Tries: Gemini (SDK if available, else REST) -> Ollama local -> MOCK
-    returns dict {"answer": str, "provider": "gemini|phi-3|mock", "timestamp": ...}
+    Try Gemini → Ollama → Mock
+    Returns dict {"answer": str, "provider": "gemini|phi-3|mock", "timestamp": ...}
     """
-    # Try Gemini SDK first if available & key is set
-    if GEMINI_API_KEY and HAS_GENAI:
+    # Try Gemini
+    if HAS_GEMINI:
         try:
-            return {"answer": call_gemini_with_sdk(prompt), "provider": "gemini-sdk", "timestamp": time.time()}
-        except Exception as e:
-            print("Gemini SDK call failed:", e)
+            answer = call_gemini(prompt)
+            print("Answered by Gemini ✅")
+            return {"answer": answer, "provider": "gemini", "timestamp": time.time()}
+        except Exception:
+            pass
 
-    # Try Gemini REST if key set and GEMINI_API_URL provided or default target
-    if GEMINI_API_KEY:
-        try:
-            return {"answer": call_gemini_rest(prompt), "provider": "gemini-rest", "timestamp": time.time()}
-        except Exception as e:
-            print("Gemini REST call failed:", e)
-
-    # Try Ollama local
+    # Try Ollama
     try:
-        return {"answer": call_ollama(prompt), "provider": "phi-3-local", "timestamp": time.time()}
-    except Exception as e:
-        print("Ollama call failed:", e)
+        answer = call_ollama(prompt)
+        print("Answered by Ollama ✅")
+        return {"answer": answer, "provider": "phi-3-local", "timestamp": time.time()}
+    except Exception:
+        pass
 
-    # Final fallback: mock
-    return {"answer": call_mock(prompt), "provider": "mock", "timestamp": time.time()}
+    # Fallback
+    answer = call_mock(prompt)
+    return {"answer": answer, "provider": "mock", "timestamp": time.time()}
