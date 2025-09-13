@@ -1,6 +1,13 @@
 <!doctype html>
 <html>
-  <head><meta charset="utf-8"><title>RAG Query</title></head>
+  <head>
+    <meta charset="utf-8">
+    <title>RAG Query</title>
+    <style>
+      /* Optional: simple chat-style formatting */
+      #answer { white-space: pre-wrap; margin-top: 10px; }
+    </style>
+  </head>
   <body>
     <h2>Ask RAG</h2>
     <textarea id="q" rows="4" cols="60">What are my main skills?</textarea><br/>
@@ -9,8 +16,8 @@
     <h3>Answer:</h3>
     <div id="answer"></div>
 
-    <h3>Sources:</h3>
-    <ul id="sources"></ul>
+    <!-- <h3>Sources:</h3>
+    <ul id="sources"></ul> -->
 
     <script>
       document.getElementById("ask").onclick = async () => {
@@ -22,19 +29,19 @@
         });
         const j = await res.json();
 
-        // Show answer
-        document.getElementById("answer").textContent = j.answer || "No answer";
+        // Show answer (updated to use response.content)
+        document.getElementById("answer").textContent = j.response?.content || "No answer";
 
-        // Show sources
-        const sourcesEl = document.getElementById("sources");
-        sourcesEl.innerHTML = "";
-        if (j.retrieved) {
-          j.retrieved.forEach(s => {
-            const li = document.createElement("li");
-            li.textContent = `${s.source} (score: ${s.score.toFixed(2)})`;
-            sourcesEl.appendChild(li);
-          });
-        }
+        // Show sources (optional, still available)
+        // const sourcesEl = document.getElementById("sources");
+        // sourcesEl.innerHTML = "";
+        // if (j.retrieved && j.retrieved.length > 0) {
+        //   j.retrieved.forEach(s => {
+        //     const li = document.createElement("li");
+        //     li.textContent = `${s.source} (score: ${s.score?.toFixed(2) || 'N/A'})`;
+        //     sourcesEl.appendChild(li);
+        //   });
+        // }
       };
     </script>
   </body>

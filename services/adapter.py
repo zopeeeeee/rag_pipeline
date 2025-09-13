@@ -60,7 +60,7 @@ def call_llm_with_fallback(prompt):
     if HAS_GEMINI:
         try:
             answer = call_gemini(prompt)
-            print("Answered by Gemini ✅")
+            print("Answered by Gemini ✅, Gemini Raw Response:", repr(answer))
             return {"answer": answer, "provider": "gemini", "timestamp": time.time()}
         except Exception:
             pass

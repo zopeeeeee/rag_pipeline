@@ -70,35 +70,45 @@ async def ask(payload: dict):
     if not q:
         raise HTTPException(400, "Missing query")
 
+    # Retrieve top chunks
     hits = retriever.hybrid_search(q, k=6)
-    relevant_hits = [h for h in hits if h["score"] > 0.2]
+    relevant_hits = hits  # use all hits to maximize context
 
+    # Prepare context
     if relevant_hits:
-        context = "\n".join(
-            [f"{i+1}) [source:{h['source']}] {h['text'][:1000]}" for i, h in enumerate(relevant_hits)]
-        )
+        context = "\n".join([h['text'][:1000] for h in relevant_hits])
     else:
         context = "No relevant context found."
 
+    # ChatGPT-style prompt (no citations or sources)
     prompt = f"""SYSTEM:
-You are a helpful assistant.  
-- If the query is related to the provided CONTEXT, answer using the CONTEXT and cite sources like [1],[2].  
-- If the query is general and not found in CONTEXT, answer from your own knowledge.  
-- If unsure, say "I don't know".  
+You are a helpful assistant that answers questions in a ChatGPT-like conversational style.
+- Use CONTEXT if relevant to the query.
+- If CONTEXT is incomplete, answer confidently using your own knowledge.
+- Present the answer in clear paragraphs or bullet points, friendly and informative.
+- Do NOT include citations or sources.
+- Avoid saying "I don't know" unless literally impossible to answer.
 
 USER QUERY:
 {q}
 
-CONTEXT (may or may not be relevant):
+CONTEXT:
 {context}"""
 
+    # Call LLM
     llm_out = call_llm_with_fallback(prompt)
+
+    # Format response as chat-style message
+    chat_response = {
+        "role": "assistant",
+        "content": llm_out["answer"].strip()
+    }
 
     return {
         "query": q,
-        "answer": llm_out["answer"],
+        "response": chat_response,
         "provider": llm_out["provider"],
-        "retrieved": [{"source": h["source"], "score": h["score"]} for h in relevant_hits],
+        "retrieved": [{"source": h["source"], "score": h.get("score", None)} for h in relevant_hits],
     }
 
 # ----------------------------
